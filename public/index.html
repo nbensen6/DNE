@@ -1424,7 +1424,10 @@ function renderFoodTable() {
         <td>${f.protein}g</td>
         <td>${f.carbs}g</td>
         <td>${f.fat}g</td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteFood(${f.id})"><i class="fas fa-trash"></i></button></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-outline btn-sm" onclick="editFood(${f.id})" title="Edit"><i class="fas fa-pen"></i></button>
+          <button class="btn btn-danger btn-sm" onclick="deleteFood(${f.id})" title="Delete"><i class="fas fa-trash"></i></button>
+        </td>
       </tr>`
     ).join('');
   }
@@ -1435,6 +1438,26 @@ function renderFoodTable() {
   const totalF = foods.reduce((s, f) => s + (f.fat || 0), 0);
   document.getElementById('food-today-totals').innerHTML =
     `<span>Cal: <strong>${totalCal}</strong></span><span>P: <strong>${totalP}g</strong></span><span>C: <strong>${totalC}g</strong></span><span>F: <strong>${totalF}g</strong></span>`;
+}
+
+let _editingFoodId = null;
+
+function editFood(id) {
+  const foods = getData(KEYS.foods);
+  const food = foods.find(f => f.id === id);
+  if (!food) return;
+  _editingFoodId = id;
+  document.getElementById('meal-modal').classList.add('show');
+  document.getElementById('meal-modal-title').textContent = 'Edit Meal';
+  document.getElementById('meal-date').value = food.date;
+  document.getElementById('meal-type').value = food.type;
+  document.getElementById('meal-desc').value = food.desc;
+  document.getElementById('meal-cal').value = food.cal;
+  document.getElementById('meal-protein').value = food.protein;
+  document.getElementById('meal-carbs').value = food.carbs;
+  document.getElementById('meal-fat').value = food.fat;
+  document.getElementById('meal-paste').value = '';
+  document.getElementById('paste-status').style.display = 'none';
 }
 
 async function deleteFood(id) {
@@ -1597,6 +1620,7 @@ function openCustomMealModal() {
   document.getElementById('meal-protein').value = '';
   document.getElementById('meal-carbs').value = '';
   document.getElementById('meal-fat').value = '';
+  _editingFoodId = null;
 }
 
 function closeMealModal() {
@@ -1620,7 +1644,12 @@ function saveMealFromModal() {
   const data = getMealModalData();
   if (!data) return;
   const foods = getData(KEYS.foods);
-  foods.push({ id: Date.now(), ...data });
+  if (_editingFoodId) {
+    const idx = foods.findIndex(f => f.id === _editingFoodId);
+    if (idx !== -1) foods[idx] = { id: _editingFoodId, ...data };
+  } else {
+    foods.push({ id: Date.now(), ...data });
+  }
   setData(KEYS.foods, foods);
   closeMealModal();
   renderFoodForDate();
