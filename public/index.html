@@ -500,7 +500,15 @@ body{background:white;color:black}
 
 <!-- ==================== FOOD LOG TAB ==================== -->
 <div id="tab-foodlog" class="tab-content">
-<h2 style="font-size:1.4rem;font-weight:700;margin-bottom:16px"><i class="fas fa-apple-whole" style="color:var(--accent);margin-right:8px"></i>Food Log</h2>
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+<h2 style="font-size:1.4rem;font-weight:700"><i class="fas fa-apple-whole" style="color:var(--accent);margin-right:8px"></i>Food Log</h2>
+<div style="display:flex;align-items:center;gap:8px">
+<button type="button" class="btn btn-outline btn-sm" onclick="shiftFoodLogDate(-1)"><i class="fas fa-chevron-left"></i></button>
+<input type="date" id="foodlog-date" onchange="renderFoodForDate()" style="width:auto">
+<button type="button" class="btn btn-outline btn-sm" onclick="shiftFoodLogDate(1)"><i class="fas fa-chevron-right"></i></button>
+<button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('foodlog-date').value=todayStr();renderFoodForDate()">Today</button>
+</div>
+</div>
 
 <!-- Quick Add -->
 <div class="card">
@@ -512,7 +520,7 @@ body{background:white;color:black}
 <!-- Today's Summary -->
 <div class="grid grid-2">
 <div class="card">
-<div class="card-title"><i class="fas fa-calendar-day"></i> Today's Log</div>
+<div class="card-title"><i class="fas fa-calendar-day"></i> <span id="foodlog-date-label">Today's Log</span></div>
 <div style="overflow-x:auto">
 <table>
 <thead><tr><th>Meal</th><th>Food</th><th>Cal</th><th>P</th><th>C</th><th>F</th><th></th></tr></thead>
@@ -1348,11 +1356,32 @@ function renderMealTemplate() {
 // ==================== FOOD LOG ====================
 let food7dayChart = null;
 
+function foodLogDate() {
+  return document.getElementById('foodlog-date').value || todayStr();
+}
+
+function shiftFoodLogDate(delta) {
+  const d = new Date(foodLogDate() + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  document.getElementById('foodlog-date').value = d.toISOString().slice(0, 10);
+  renderFoodForDate();
+}
+
+function renderFoodForDate() {
+  const date = foodLogDate();
+  const isToday = date === todayStr();
+  document.getElementById('foodlog-date-label').textContent = isToday ? "Today's Log" : formatDate(date);
+  renderFoodTable();
+  renderFood7DayChart();
+}
+
 function refreshFoodLog() {
+  document.getElementById('foodlog-date').value = todayStr();
   renderQuickAddButtons();
-  renderFoodToday();
+  renderFoodTable();
   renderFood7DayChart();
   document.getElementById('meal-date').value = todayStr();
+  document.getElementById('foodlog-date-label').textContent = "Today's Log";
 }
 
 function renderQuickAddButtons() {
@@ -1368,7 +1397,7 @@ function quickAddFood(index) {
   const foods = getData(KEYS.foods);
   foods.push({
     id: Date.now(),
-    date: todayStr(),
+    date: foodLogDate(),
     type: food.type,
     desc: food.name,
     cal: food.cal,
@@ -1377,11 +1406,11 @@ function quickAddFood(index) {
     fat: food.fat
   });
   setData(KEYS.foods, foods);
-  refreshFoodLog();
+  renderFoodForDate();
 }
 
-function renderFoodToday() {
-  const foods = getData(KEYS.foods).filter(f => f.date === todayStr());
+function renderFoodTable() {
+  const foods = getData(KEYS.foods).filter(f => f.date === foodLogDate());
   const tbody = document.getElementById('food-today-body');
 
   if (foods.length === 0) {
@@ -1412,7 +1441,7 @@ async function deleteFood(id) {
   if (!await confirmAction('Delete this food entry?')) return;
   let foods = getData(KEYS.foods).filter(f => f.id !== id);
   setData(KEYS.foods, foods);
-  refreshFoodLog();
+  renderFoodForDate();
 }
 
 function renderFood7DayChart() {
@@ -1560,7 +1589,7 @@ function parseNutritionPaste() {
 function openCustomMealModal() {
   document.getElementById('meal-modal').classList.add('show');
   document.getElementById('meal-modal-title').textContent = 'Log Custom Meal';
-  document.getElementById('meal-date').value = todayStr();
+  document.getElementById('meal-date').value = foodLogDate();
   document.getElementById('meal-paste').value = '';
   document.getElementById('paste-status').style.display = 'none';
   document.getElementById('meal-desc').value = '';
@@ -1594,7 +1623,7 @@ function saveMealFromModal() {
   foods.push({ id: Date.now(), ...data });
   setData(KEYS.foods, foods);
   closeMealModal();
-  refreshFoodLog();
+  renderFoodForDate();
 }
 
 function saveMealAsQuickAdd() {
@@ -1603,12 +1632,11 @@ function saveMealAsQuickAdd() {
   const qf = getQuickFoods();
   qf.push({ name: data.desc, cal: data.cal, protein: data.protein, carbs: data.carbs, fat: data.fat, type: data.type });
   setData(KEYS.quickFoods, qf);
-  // Also save the meal itself
   const foods = getData(KEYS.foods);
   foods.push({ id: Date.now(), ...data });
   setData(KEYS.foods, foods);
   closeMealModal();
-  refreshFoodLog();
+  renderFoodForDate();
   toast('Saved as quick food and logged!');
 }
 
