@@ -50,6 +50,7 @@ const hashReady = bcrypt.hash(AUTH_PASS, 10).then(h => { passwordHash = h; });
 // ---------------------------------------------------------------------------
 const app = express();
 
+app.set('trust proxy', 1);
 app.use(express.json());
 
 app.use(session({
