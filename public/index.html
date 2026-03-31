@@ -781,14 +781,31 @@ function getData(key) {
 
 function setData(key, data) {
   _cache[key] = data;
-  fetch('/api/data/' + encodeURIComponent(key), {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ value: data })
-  }).then(r => {
-    if (r.status === 401) window.location.href = '/login.html';
-    updateBackupStatus(r.ok);
-  }).catch(() => updateBackupStatus(false));
+  saveToServer(key, data);
+}
+
+async function saveToServer(key, data, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      const r = await fetch('/api/data/' + encodeURIComponent(key), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: data })
+      });
+      if (r.ok) { updateBackupStatus(true); return; }
+      if (r.status === 401) {
+        if (i < retries) { await new Promise(ok => setTimeout(ok, 500)); continue; }
+        toast('Session expired — please log in again.', 'warning');
+        setTimeout(() => { window.location.href = '/login.html'; }, 1500);
+        return;
+      }
+      updateBackupStatus(false);
+      return;
+    } catch (_) {
+      if (i === retries) updateBackupStatus(false);
+      else await new Promise(ok => setTimeout(ok, 500));
+    }
+  }
 }
 
 function updateBackupStatus(ok) {
@@ -807,15 +824,20 @@ function updateBackupStatus(ok) {
 }
 
 async function initDataLayer() {
-  try {
-    const resp = await fetch('/api/data');
-    if (resp.status === 401) { window.location.href = '/login.html'; return; }
-    const allData = await resp.json();
-    Object.values(KEYS).forEach(key => {
-      if (allData[key] !== undefined) _cache[key] = allData[key];
-    });
-  } catch (err) {
-    console.error('Failed to load data from server:', err);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const resp = await fetch('/api/data');
+      if (resp.status === 401) { window.location.href = '/login.html'; return; }
+      if (!resp.ok) throw new Error('Status ' + resp.status);
+      const allData = await resp.json();
+      Object.values(KEYS).forEach(key => {
+        if (allData[key] !== undefined) _cache[key] = allData[key];
+      });
+      return;
+    } catch (err) {
+      console.error('Failed to load data (attempt ' + (attempt + 1) + '):', err);
+      if (attempt < 2) await new Promise(ok => setTimeout(ok, 1000));
+    }
   }
 }
 

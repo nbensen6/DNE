@@ -30,6 +30,51 @@ db.exec(`
   )
 `);
 
+// ---------------------------------------------------------------------------
+// SQLite session store (survives server restarts / Fly suspends)
+// ---------------------------------------------------------------------------
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    sid     TEXT PRIMARY KEY,
+    data    TEXT NOT NULL,
+    expires INTEGER NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires)`);
+
+const sessGet = db.prepare('SELECT data, expires FROM sessions WHERE sid = ?');
+const sessSet = db.prepare(`
+  INSERT INTO sessions (sid, data, expires) VALUES (?, ?, ?)
+  ON CONFLICT(sid) DO UPDATE SET data = excluded.data, expires = excluded.expires
+`);
+const sessDel = db.prepare('DELETE FROM sessions WHERE sid = ?');
+const sessClean = db.prepare('DELETE FROM sessions WHERE expires < ?');
+
+class SQLiteStore extends session.Store {
+  get(sid, cb) {
+    try {
+      const row = sessGet.get(sid);
+      if (!row) return cb(null, null);
+      if (row.expires < Date.now()) { sessDel.run(sid); return cb(null, null); }
+      cb(null, JSON.parse(row.data));
+    } catch (e) { cb(e); }
+  }
+  set(sid, sess, cb) {
+    try {
+      const maxAge = (sess.cookie && sess.cookie.maxAge) || 7 * 24 * 60 * 60 * 1000;
+      const expires = Date.now() + maxAge;
+      sessSet.run(sid, JSON.stringify(sess), expires);
+      cb && cb(null);
+    } catch (e) { cb && cb(e); }
+  }
+  destroy(sid, cb) {
+    try { sessDel.run(sid); cb && cb(null); } catch (e) { cb && cb(e); }
+  }
+}
+
+// Clean expired sessions every hour
+setInterval(() => { try { sessClean.run(Date.now()); } catch (_) {} }, 60 * 60 * 1000);
+
 // Prepared statements for performance
 const stmtGet = db.prepare('SELECT value FROM kv_store WHERE key = ?');
 const stmtGetAll = db.prepare('SELECT key, value FROM kv_store');
@@ -54,6 +99,7 @@ app.set('trust proxy', 1);
 app.use(express.json());
 
 app.use(session({
+  store: new SQLiteStore(),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
@@ -61,7 +107,7 @@ app.use(session({
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
   }
 }));
 
