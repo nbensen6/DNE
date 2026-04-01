@@ -75,6 +75,37 @@ class SQLiteStore extends session.Store {
 // Clean expired sessions every hour
 setInterval(() => { try { sessClean.run(Date.now()); } catch (_) {} }, 60 * 60 * 1000);
 
+// ---------------------------------------------------------------------------
+// Automatic SQLite backups — keep last 7 daily copies
+// ---------------------------------------------------------------------------
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+function createBackup() {
+  try {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const dest = path.join(BACKUP_DIR, `fitdash-${stamp}.db`);
+    db.backup(dest).then(() => {
+      console.log('Backup created:', dest);
+      // Prune old backups, keep last 7
+      const files = fs.readdirSync(BACKUP_DIR)
+        .filter(f => f.startsWith('fitdash-') && f.endsWith('.db'))
+        .sort();
+      while (files.length > 7) {
+        const old = files.shift();
+        fs.unlinkSync(path.join(BACKUP_DIR, old));
+        console.log('Pruned old backup:', old);
+      }
+    }).catch(err => console.error('Backup failed:', err));
+  } catch (err) {
+    console.error('Backup error:', err);
+  }
+}
+
+// Backup on startup, then every 6 hours
+createBackup();
+setInterval(createBackup, 6 * 60 * 60 * 1000);
+
 // Prepared statements for performance
 const stmtGet = db.prepare('SELECT value FROM kv_store WHERE key = ?');
 const stmtGetAll = db.prepare('SELECT key, value FROM kv_store');
@@ -196,6 +227,23 @@ app.put('/api/data/:key', requireAuth, (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error('PUT /api/data/:key error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/backup', requireAuth, (_req, res) => {
+  try {
+    const rows = stmtGetAll.all();
+    const result = {};
+    for (const row of rows) {
+      try { result[row.key] = JSON.parse(row.value); } catch { result[row.key] = row.value; }
+    }
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+    res.setHeader('Content-Disposition', `attachment; filename="fitdash-backup-${stamp}.json"`);
+    res.setHeader('Content-Type', 'application/json');
+    return res.json(result);
+  } catch (err) {
+    console.error('GET /api/backup error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
