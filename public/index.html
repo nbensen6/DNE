@@ -750,6 +750,7 @@ body{background:white;color:black}
 <div class="form-row">
 <div class="form-group"><label>Calories</label><input type="number" id="meal-cal" placeholder="0"></div>
 <div class="form-group"><label>Protein (g)</label><input type="number" id="meal-protein" placeholder="0"></div>
+<div class="form-group" style="max-width:80px"><label>Qty</label><input type="number" id="meal-qty" value="1" min="1" max="20"></div>
 </div>
 <div class="form-row">
 <div class="form-group"><label>Carbs (g)</label><input type="number" id="meal-carbs" placeholder="0"></div>
@@ -1473,26 +1474,39 @@ function refreshFoodLog() {
 function renderQuickAddButtons() {
   const qf = getQuickFoods();
   document.getElementById('quick-add-buttons').innerHTML = qf.map((f, i) =>
-    `<button class="quick-btn" onclick="quickAddFood(${i})" title="${f.cal} cal | P:${f.protein}g C:${f.carbs}g F:${f.fat}g">${f.name}</button>`
+    `<button class="quick-btn" onclick="quickAddFood(${i}, 1)" oncontextmenu="event.preventDefault();promptQuickAddQty(${i})" title="${f.cal} cal | P:${f.protein}g C:${f.carbs}g F:${f.fat}g&#10;Right-click for multiple">${f.name}</button>`
   ).join('');
 }
 
-function quickAddFood(index) {
+function promptQuickAddQty(index) {
+  const qf = getQuickFoods();
+  const food = qf[index];
+  const input = prompt('How many "' + food.name + '" to add?', '2');
+  if (input === null) return;
+  const qty = Math.max(1, parseInt(input) || 1);
+  quickAddFood(index, qty);
+}
+
+function quickAddFood(index, qty) {
   const qf = getQuickFoods();
   const food = qf[index];
   const foods = getData(KEYS.foods);
-  foods.push({
-    id: Date.now(),
-    date: foodLogDate(),
-    type: food.type,
-    desc: food.name,
-    cal: food.cal,
-    protein: food.protein,
-    carbs: food.carbs,
-    fat: food.fat
-  });
+  qty = qty || 1;
+  for (let i = 0; i < qty; i++) {
+    foods.push({
+      id: Date.now() + i,
+      date: foodLogDate(),
+      type: food.type,
+      desc: food.name,
+      cal: food.cal,
+      protein: food.protein,
+      carbs: food.carbs,
+      fat: food.fat
+    });
+  }
   setData(KEYS.foods, foods);
   renderFoodForDate();
+  if (qty > 1) toast(`Added ${qty}x ${food.name}`, 'success');
 }
 
 function renderFoodTable() {
@@ -1706,6 +1720,7 @@ function openCustomMealModal() {
   document.getElementById('meal-protein').value = '';
   document.getElementById('meal-carbs').value = '';
   document.getElementById('meal-fat').value = '';
+  document.getElementById('meal-qty').value = '1';
   _editingFoodId = null;
 }
 
@@ -1729,12 +1744,15 @@ function getMealModalData() {
 function saveMealFromModal() {
   const data = getMealModalData();
   if (!data) return;
+  const qty = Math.max(1, parseInt(document.getElementById('meal-qty').value) || 1);
   const foods = getData(KEYS.foods);
   if (_editingFoodId) {
     const idx = foods.findIndex(f => f.id === _editingFoodId);
     if (idx !== -1) foods[idx] = { id: _editingFoodId, ...data };
   } else {
-    foods.push({ id: Date.now(), ...data });
+    for (let i = 0; i < qty; i++) {
+      foods.push({ id: Date.now() + i, ...data });
+    }
   }
   setData(KEYS.foods, foods);
   closeMealModal();
