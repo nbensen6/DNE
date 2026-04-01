@@ -1499,18 +1499,16 @@ function quickAddFood(index, qty) {
   const food = qf[index];
   const foods = getData(KEYS.foods);
   qty = qty || 1;
-  for (let i = 0; i < qty; i++) {
-    foods.push({
-      id: Date.now() + i,
-      date: foodLogDate(),
-      type: food.type,
-      desc: food.name,
-      cal: food.cal,
-      protein: food.protein,
-      carbs: food.carbs,
-      fat: food.fat
-    });
-  }
+  foods.push({
+    id: Date.now(),
+    date: foodLogDate(),
+    type: food.type,
+    desc: qty > 1 ? `${food.name} x${qty}` : food.name,
+    cal: food.cal * qty,
+    protein: food.protein * qty,
+    carbs: food.carbs * qty,
+    fat: food.fat * qty
+  });
   setData(KEYS.foods, foods);
   renderFoodForDate();
   if (qty > 1) toast(`Added ${qty}x ${food.name}`, 'success');
@@ -1758,9 +1756,15 @@ function saveMealFromModal() {
     const idx = foods.findIndex(f => f.id === _editingFoodId);
     if (idx !== -1) foods[idx] = { id: _editingFoodId, ...data };
   } else {
-    for (let i = 0; i < qty; i++) {
-      foods.push({ id: Date.now() + i, ...data });
-    }
+    foods.push({
+      id: Date.now(),
+      ...data,
+      desc: qty > 1 ? `${data.desc} x${qty}` : data.desc,
+      cal: data.cal * qty,
+      protein: data.protein * qty,
+      carbs: data.carbs * qty,
+      fat: data.fat * qty
+    });
   }
   setData(KEYS.foods, foods);
   closeMealModal();
