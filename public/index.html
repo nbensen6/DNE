@@ -750,11 +750,11 @@ body{background:white;color:black}
 <div class="form-row">
 <div class="form-group"><label>Calories</label><input type="number" id="meal-cal" placeholder="0"></div>
 <div class="form-group"><label>Protein (g)</label><input type="number" id="meal-protein" placeholder="0"></div>
-<div class="form-group" style="max-width:80px"><label>Qty</label><input type="number" id="meal-qty" value="1" min="1" max="20"></div>
 </div>
 <div class="form-row">
 <div class="form-group"><label>Carbs (g)</label><input type="number" id="meal-carbs" placeholder="0"></div>
 <div class="form-group"><label>Fat (g)</label><input type="number" id="meal-fat" placeholder="0"></div>
+<div class="form-group" style="max-width:80px"><label>Qty</label><input type="number" id="meal-qty" value="1" min="1" max="20"></div>
 </div>
 <div class="btn-group">
 <button class="btn btn-primary" onclick="saveMealFromModal()"><i class="fas fa-save"></i> Save</button>
@@ -932,13 +932,20 @@ document.getElementById('confirm-dialog').addEventListener('click', (e) => {
 // ==================== TAB NAVIGATION ====================
 document.querySelectorAll('.nav-tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-    refreshCurrentTab(tab.dataset.tab);
+    switchToTab(tab.dataset.tab);
   });
 });
+
+function switchToTab(tabName) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const navTab = document.querySelector(`.nav-tab[data-tab="${tabName}"]`);
+  if (navTab) navTab.classList.add('active');
+  const content = document.getElementById('tab-' + tabName);
+  if (content) content.classList.add('active');
+  localStorage.setItem('fitdash-active-tab', tabName);
+  refreshCurrentTab(tabName);
+}
 
 function refreshCurrentTab(tab) {
   if (tab === 'dashboard') refreshDashboard();
@@ -1408,7 +1415,7 @@ function foodLogDate() {
 function shiftFoodLogDate(delta) {
   const d = new Date(foodLogDate() + 'T12:00:00');
   d.setDate(d.getDate() + delta);
-  document.getElementById('foodlog-date').value = d.toISOString().slice(0, 10);
+  document.getElementById('foodlog-date').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   renderFoodForDate();
 }
 
@@ -1556,6 +1563,7 @@ function editFood(id) {
   document.getElementById('meal-protein').value = food.protein;
   document.getElementById('meal-carbs').value = food.carbs;
   document.getElementById('meal-fat').value = food.fat;
+  document.getElementById('meal-qty').value = '1';
   document.getElementById('meal-paste').value = '';
   document.getElementById('paste-status').style.display = 'none';
 }
@@ -1576,7 +1584,7 @@ function renderFood7DayChart() {
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
+    const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     days.push(d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
     const dayFoods = getData(KEYS.foods).filter(f => f.date === ds);
     cals.push(dayFoods.reduce((s, f) => s + (f.cal || 0), 0));
@@ -1818,9 +1826,10 @@ async function deleteLink(index) {
 // ==================== INIT ====================
 async function init() {
   await initDataLayer();
-  refreshDashboard();
   document.getElementById('weight-date').value = todayStr();
   getQuickFoods();
+  const savedTab = localStorage.getItem('fitdash-active-tab') || 'dashboard';
+  switchToTab(savedTab);
 }
 
 document.addEventListener('DOMContentLoaded', init);
