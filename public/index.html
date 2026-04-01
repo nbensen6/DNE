@@ -546,6 +546,13 @@ body{background:white;color:black}
 </div>
 </div>
 <div class="card">
+<div class="card-title"><i class="fas fa-chart-pie"></i> Macro Breakdown</div>
+<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+<div style="width:160px;height:160px;flex-shrink:0"><canvas id="macro-pie-chart"></canvas></div>
+<div id="macro-pie-legend" style="font-size:.82rem;line-height:2"></div>
+</div>
+</div>
+<div class="card">
 <div class="card-title"><i class="fas fa-chart-column"></i> Last 7 Days Calories</div>
 <div class="chart-wrap"><canvas id="food-7day-chart"></canvas></div>
 </div>
@@ -1407,6 +1414,7 @@ function renderMealTemplate() {
 
 // ==================== FOOD LOG ====================
 let food7dayChart = null;
+let macroPieChart = null;
 
 function foodLogDate() {
   return document.getElementById('foodlog-date').value || todayStr();
@@ -1543,6 +1551,52 @@ function renderFoodTable() {
   const totalF = foods.reduce((s, f) => s + (f.fat || 0), 0);
   document.getElementById('food-today-totals').innerHTML =
     `<span>Cal: <strong>${totalCal}</strong></span><span>P: <strong>${totalP}g</strong></span><span>C: <strong>${totalC}g</strong></span><span>F: <strong>${totalF}g</strong></span>`;
+  renderMacroPie(totalP, totalC, totalF);
+}
+
+function renderMacroPie(protein, carbs, fat) {
+  const ctx = document.getElementById('macro-pie-chart');
+  if (macroPieChart) macroPieChart.destroy();
+
+  const pCal = protein * 4;
+  const cCal = carbs * 4;
+  const fCal = fat * 9;
+  const total = pCal + cCal + fCal;
+
+  if (total === 0) {
+    document.getElementById('macro-pie-legend').innerHTML = '<span style="color:var(--text-muted)">No food logged</span>';
+    return;
+  }
+
+  const pPct = Math.round(pCal / total * 100);
+  const cPct = Math.round(cCal / total * 100);
+  const fPct = Math.round(fCal / total * 100);
+
+  macroPieChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Protein', 'Carbs', 'Fat'],
+      datasets: [{
+        data: [pCal, cCal, fCal],
+        backgroundColor: ['rgba(74,222,128,.8)', 'rgba(59,130,246,.8)', 'rgba(245,158,11,.8)'],
+        borderColor: ['#4ade80', '#3b82f6', '#f59e0b'],
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: '55%',
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  const legend = document.getElementById('macro-pie-legend');
+  legend.innerHTML =
+    `<div><span style="color:#4ade80;font-weight:700">&#9679;</span> Protein: <strong>${protein}g</strong> (${pPct}%) <span style="color:var(--text-muted)">${pCal} cal</span></div>` +
+    `<div><span style="color:#3b82f6;font-weight:700">&#9679;</span> Carbs: <strong>${carbs}g</strong> (${cPct}%) <span style="color:var(--text-muted)">${cCal} cal</span></div>` +
+    `<div><span style="color:#f59e0b;font-weight:700">&#9679;</span> Fat: <strong>${fat}g</strong> (${fPct}%) <span style="color:var(--text-muted)">${fCal} cal</span></div>` +
+    `<div style="margin-top:4px;font-size:.72rem;color:var(--text-muted)">Target: P 30% · C 40% · F 30%</div>`;
 }
 
 let _editingFoodId = null;
