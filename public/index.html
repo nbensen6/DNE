@@ -528,6 +528,7 @@ body{background:white;color:black}
 </div>
 <div id="water-dots" style="display:flex;gap:4px;flex-wrap:wrap"></div>
 </div>
+<div id="water-avg" style="font-size:.78rem;color:var(--text-muted);margin-top:8px"></div>
 </div>
 
 <!-- Today's Summary -->
@@ -774,12 +775,17 @@ const KEYS = {
 };
 
 const _cache = {};
+let _dataLoaded = false;
 
 function getData(key) {
   return _cache[key] || [];
 }
 
 function setData(key, data) {
+  if (!_dataLoaded) {
+    toast('Still loading data — please wait a moment and try again.', 'warning');
+    return;
+  }
   _cache[key] = data;
   saveToServer(key, data);
 }
@@ -833,6 +839,7 @@ async function initDataLayer() {
       Object.values(KEYS).forEach(key => {
         if (allData[key] !== undefined) _cache[key] = allData[key];
       });
+      _dataLoaded = true;
       return;
     } catch (err) {
       console.error('Failed to load data (attempt ' + (attempt + 1) + '):', err);
@@ -1430,6 +1437,17 @@ function renderWater() {
   dots.innerHTML = Array.from({ length: goal }, (_, i) =>
     `<i class="fas fa-droplet" style="font-size:1.1rem;color:${i < count ? 'var(--accent)' : 'var(--border)'}"></i>`
   ).join('');
+
+  // Water average
+  const water = getData(KEYS.water).filter(w => w.count > 0);
+  const avgEl = document.getElementById('water-avg');
+  if (water.length > 0) {
+    const total = water.reduce((s, w) => s + w.count, 0);
+    const avg = (total / water.length).toFixed(1);
+    avgEl.textContent = `Avg: ${avg} glasses/day (${water.length} day${water.length > 1 ? 's' : ''} tracked)`;
+  } else {
+    avgEl.textContent = '';
+  }
 }
 
 function renderFoodForDate() {
