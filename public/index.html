@@ -1481,17 +1481,17 @@ function refreshFoodLog() {
 function renderQuickAddButtons() {
   const qf = getQuickFoods();
   document.getElementById('quick-add-buttons').innerHTML = qf.map((f, i) =>
-    `<button class="quick-btn" onclick="quickAddFood(${i}, 1)" oncontextmenu="event.preventDefault();promptQuickAddQty(${i})" title="${f.cal} cal | P:${f.protein}g C:${f.carbs}g F:${f.fat}g&#10;Right-click for multiple">${f.name}</button>`
+    `<div style="display:inline-flex;align-items:stretch;border-radius:8px;overflow:hidden;border:1px solid rgba(233,69,96,.3)">
+      <button class="quick-btn" onclick="quickAddFood(${i}, 1)" style="border:none;border-radius:0" title="${f.cal} cal | P:${f.protein}g C:${f.carbs}g F:${f.fat}g">${f.name}</button>
+      <select onchange="if(this.value){quickAddFood(${i}, parseInt(this.value));this.value='';}" style="width:36px;padding:2px;background:rgba(233,69,96,.15);border:none;border-left:1px solid rgba(233,69,96,.3);color:var(--accent);font-size:.7rem;cursor:pointer" title="Add multiple">
+        <option value="">+</option>
+        <option value="2">2x</option>
+        <option value="3">3x</option>
+        <option value="4">4x</option>
+        <option value="5">5x</option>
+      </select>
+    </div>`
   ).join('');
-}
-
-function promptQuickAddQty(index) {
-  const qf = getQuickFoods();
-  const food = qf[index];
-  const input = prompt('How many "' + food.name + '" to add?', '2');
-  if (input === null) return;
-  const qty = Math.max(1, parseInt(input) || 1);
-  quickAddFood(index, qty);
 }
 
 function quickAddFood(index, qty) {
@@ -1552,16 +1552,20 @@ function editFood(id) {
   const food = foods.find(f => f.id === id);
   if (!food) return;
   _editingFoodId = id;
+  // Detect qty from description (e.g. "Chicken Momos x2")
+  const qtyMatch = food.desc.match(/ x(\d+)$/);
+  const savedQty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
+  const perServing = savedQty > 1 ? savedQty : 1;
   document.getElementById('meal-modal').classList.add('show');
   document.getElementById('meal-modal-title').textContent = 'Edit Meal';
   document.getElementById('meal-date').value = food.date;
   document.getElementById('meal-type').value = food.type;
-  document.getElementById('meal-desc').value = food.desc;
-  document.getElementById('meal-cal').value = food.cal;
-  document.getElementById('meal-protein').value = food.protein;
-  document.getElementById('meal-carbs').value = food.carbs;
-  document.getElementById('meal-fat').value = food.fat;
-  document.getElementById('meal-qty').value = '1';
+  document.getElementById('meal-desc').value = food.desc.replace(/ x\d+$/, '');
+  document.getElementById('meal-cal').value = Math.round(food.cal / perServing);
+  document.getElementById('meal-protein').value = Math.round(food.protein / perServing);
+  document.getElementById('meal-carbs').value = Math.round(food.carbs / perServing);
+  document.getElementById('meal-fat').value = Math.round(food.fat / perServing);
+  document.getElementById('meal-qty').value = savedQty;
   document.getElementById('meal-paste').value = '';
   document.getElementById('paste-status').style.display = 'none';
 }
@@ -1751,20 +1755,20 @@ function saveMealFromModal() {
   const data = getMealModalData();
   if (!data) return;
   const qty = Math.max(1, parseInt(document.getElementById('meal-qty').value) || 1);
+  const entry = {
+    ...data,
+    desc: qty > 1 ? data.desc.replace(/ x\d+$/, '') + ` x${qty}` : data.desc,
+    cal: data.cal * qty,
+    protein: data.protein * qty,
+    carbs: data.carbs * qty,
+    fat: data.fat * qty
+  };
   const foods = getData(KEYS.foods);
   if (_editingFoodId) {
     const idx = foods.findIndex(f => f.id === _editingFoodId);
-    if (idx !== -1) foods[idx] = { id: _editingFoodId, ...data };
+    if (idx !== -1) foods[idx] = { id: _editingFoodId, ...entry };
   } else {
-    foods.push({
-      id: Date.now(),
-      ...data,
-      desc: qty > 1 ? `${data.desc} x${qty}` : data.desc,
-      cal: data.cal * qty,
-      protein: data.protein * qty,
-      carbs: data.carbs * qty,
-      fat: data.fat * qty
-    });
+    foods.push({ id: Date.now(), ...entry });
   }
   setData(KEYS.foods, foods);
   closeMealModal();
