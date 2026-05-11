@@ -510,11 +510,36 @@ body{background:white;color:black}
 </div>
 </div>
 
-<!-- Quick Add -->
+<!-- AI Assistant -->
 <div class="card">
-<div class="card-title"><i class="fas fa-bolt"></i> Quick Add</div>
-<div class="quick-add-grid" id="quick-add-buttons"></div>
+<div class="card-title"><i class="fas fa-wand-magic-sparkles"></i> AI Assistant</div>
+<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+<input type="text" id="ai-text-input" placeholder='Try: "add a bagel with cream cheese to breakfast"' style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter'){aiParseText()}">
+<button class="btn btn-primary btn-sm" onclick="aiParseText()" id="ai-text-btn"><i class="fas fa-paper-plane"></i> Send</button>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap">
+<label class="btn btn-info btn-sm" style="cursor:pointer;margin:0">
+<i class="fas fa-camera"></i> Take Photo
+<input type="file" accept="image/*" capture="environment" onchange="aiAnalyzePhoto(event)" style="display:none">
+</label>
+<label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0">
+<i class="fas fa-image"></i> Upload Photo
+<input type="file" accept="image/*" onchange="aiAnalyzePhoto(event)" style="display:none">
+</label>
 <button class="btn btn-outline btn-sm" onclick="openCustomMealModal()"><i class="fas fa-plus"></i> Custom Meal</button>
+</div>
+<div id="ai-status" style="font-size:.78rem;color:var(--text-muted);margin-top:8px;display:none"></div>
+</div>
+
+<!-- Quick Add (collapsible) -->
+<div class="card">
+<div class="card-title" style="cursor:pointer;user-select:none;justify-content:space-between" onclick="toggleQuickAdd()">
+<span><i class="fas fa-bolt"></i> Quick Add</span>
+<i class="fas fa-chevron-down" id="quick-add-chevron" style="transition:transform .2s;color:var(--text-muted)"></i>
+</div>
+<div id="quick-add-body" style="display:none">
+<div class="quick-add-grid" id="quick-add-buttons"></div>
+</div>
 </div>
 
 <!-- Water Tracker -->
@@ -767,6 +792,20 @@ body{background:white;color:black}
 <button class="btn btn-primary" onclick="saveMealFromModal()"><i class="fas fa-save"></i> Save</button>
 <button class="btn btn-success" onclick="saveMealAsQuickAdd()"><i class="fas fa-star"></i> Save as Quick Food</button>
 <button class="btn btn-outline" onclick="closeMealModal()">Cancel</button>
+</div>
+</div>
+</div>
+
+<!-- AI Confirmation modal -->
+<div class="modal-overlay" id="ai-confirm-modal">
+<div class="modal" style="max-width:640px">
+<h3><i class="fas fa-wand-magic-sparkles"></i> Confirm Items</h3>
+<p style="font-size:.85rem;color:var(--text-muted);margin-bottom:12px">Review the macros below. Edit any field, then add to your log.</p>
+<div id="ai-confirm-thumb" style="margin-bottom:12px;display:none"></div>
+<div id="ai-confirm-items"></div>
+<div class="btn-group">
+<button class="btn btn-primary" onclick="aiConfirmAdd()"><i class="fas fa-check"></i> Add All to Log</button>
+<button class="btn btn-outline" onclick="closeAIConfirm()">Cancel</button>
 </div>
 </div>
 </div>
@@ -1479,11 +1518,30 @@ function renderFoodForDate() {
 function refreshFoodLog() {
   document.getElementById('foodlog-date').value = todayStr();
   renderQuickAddButtons();
+  restoreQuickAddState();
   renderFoodTable();
   renderFood7DayChart();
   renderWater();
   document.getElementById('meal-date').value = todayStr();
   document.getElementById('foodlog-date-label').textContent = "Today's Log";
+}
+
+function toggleQuickAdd() {
+  const body = document.getElementById('quick-add-body');
+  const chevron = document.getElementById('quick-add-chevron');
+  const isOpen = body.style.display === 'block';
+  body.style.display = isOpen ? 'none' : 'block';
+  chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+  try { localStorage.setItem('fitdash-quickadd-open', isOpen ? '0' : '1'); } catch (_) {}
+}
+
+function restoreQuickAddState() {
+  try {
+    if (localStorage.getItem('fitdash-quickadd-open') === '1') {
+      document.getElementById('quick-add-body').style.display = 'block';
+      document.getElementById('quick-add-chevron').style.transform = 'rotate(180deg)';
+    }
+  } catch (_) {}
 }
 
 function renderQuickAddButtons() {
@@ -1520,6 +1578,195 @@ function quickAddFood(index, qty) {
   setData(KEYS.foods, foods);
   renderFoodForDate();
   if (qty > 1) toast(`Added ${qty}x ${food.name}`, 'success');
+}
+
+// ==================== AI ASSISTANT ====================
+let aiPendingItems = [];
+let aiPhotoThumb = null;
+
+function aiSetStatus(msg, type) {
+  const el = document.getElementById('ai-status');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const colors = { error: 'var(--danger)', success: 'var(--success)', info: 'var(--info)' };
+  el.style.color = colors[type] || 'var(--text-muted)';
+  el.innerHTML = type === 'loading'
+    ? '<i class="fas fa-spinner fa-spin"></i> ' + msg
+    : msg;
+}
+
+async function aiParseText() {
+  const input = document.getElementById('ai-text-input');
+  const text = input.value.trim();
+  if (!text) { toast('Type what you ate first', 'warning'); return; }
+  const btn = document.getElementById('ai-text-btn');
+  btn.disabled = true;
+  aiSetStatus('Analyzing...', 'loading');
+  try {
+    const resp = await fetch('/api/ai/parse-food', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, defaultDate: foodLogDate() })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'Request failed');
+    }
+    const data = await resp.json();
+    if (!data.items || data.items.length === 0) {
+      aiSetStatus('No food items detected. Try rephrasing.', 'error');
+      return;
+    }
+    aiPhotoThumb = null;
+    openAIConfirm(data.items);
+    input.value = '';
+    aiSetStatus('', null);
+  } catch (e) {
+    aiSetStatus('Error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function aiAnalyzePhoto(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  event.target.value = '';
+  if (file.size > 10 * 1024 * 1024) { toast('Image too large (max 10MB)', 'error'); return; }
+  aiSetStatus('Reading photo...', 'loading');
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const resized = await aiResizeImage(dataUrl, 1024);
+    aiSetStatus('Analyzing photo with Claude...', 'loading');
+    const resp = await fetch('/api/ai/analyze-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: resized, mediaType: 'image/jpeg' })
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || 'Request failed');
+    }
+    const data = await resp.json();
+    if (!data.items || data.items.length === 0) {
+      aiSetStatus('Could not identify food in the photo.', 'error');
+      return;
+    }
+    aiPhotoThumb = resized;
+    openAIConfirm(data.items);
+    aiSetStatus('', null);
+  } catch (e) {
+    aiSetStatus('Error: ' + e.message, 'error');
+  }
+}
+
+function aiResizeImage(dataUrl, maxSize) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxSize || height > maxSize) {
+        const ratio = Math.min(maxSize / width, maxSize / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function openAIConfirm(items) {
+  aiPendingItems = items.map(it => ({
+    type: it.type || 'Snack',
+    desc: it.desc || it.name || 'Food',
+    cal: Math.round(it.cal || 0),
+    protein: Math.round(it.protein || 0),
+    carbs: Math.round(it.carbs || 0),
+    fat: Math.round(it.fat || 0)
+  }));
+  renderAIConfirmItems();
+  const thumb = document.getElementById('ai-confirm-thumb');
+  if (aiPhotoThumb) {
+    thumb.style.display = 'block';
+    thumb.innerHTML = `<img src="${aiPhotoThumb}" style="max-width:100%;max-height:160px;border-radius:8px;border:1px solid var(--border)">`;
+  } else {
+    thumb.style.display = 'none';
+    thumb.innerHTML = '';
+  }
+  document.getElementById('ai-confirm-modal').classList.add('show');
+}
+
+function renderAIConfirmItems() {
+  const container = document.getElementById('ai-confirm-items');
+  if (aiPendingItems.length === 0) {
+    container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:16px">All items removed.</p>';
+    return;
+  }
+  container.innerHTML = aiPendingItems.map((it, i) => `
+    <div style="background:#1a1a2e;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
+        <select onchange="aiPendingItems[${i}].type=this.value" style="flex:0 0 110px">
+          <option value="Breakfast" ${it.type==='Breakfast'?'selected':''}>Breakfast</option>
+          <option value="Lunch" ${it.type==='Lunch'?'selected':''}>Lunch</option>
+          <option value="Dinner" ${it.type==='Dinner'?'selected':''}>Dinner</option>
+          <option value="Snack" ${it.type==='Snack'?'selected':''}>Snack</option>
+        </select>
+        <input type="text" value="${it.desc.replace(/"/g,'&quot;')}" oninput="aiPendingItems[${i}].desc=this.value" style="flex:1">
+        <button class="btn btn-danger btn-sm" onclick="aiRemoveItem(${i})" title="Remove"><i class="fas fa-trash"></i></button>
+      </div>
+      <div style="display:flex;gap:6px">
+        <div style="flex:1"><label style="font-size:.65rem">Cal</label><input type="number" value="${it.cal}" oninput="aiPendingItems[${i}].cal=parseInt(this.value)||0"></div>
+        <div style="flex:1"><label style="font-size:.65rem">P (g)</label><input type="number" value="${it.protein}" oninput="aiPendingItems[${i}].protein=parseInt(this.value)||0"></div>
+        <div style="flex:1"><label style="font-size:.65rem">C (g)</label><input type="number" value="${it.carbs}" oninput="aiPendingItems[${i}].carbs=parseInt(this.value)||0"></div>
+        <div style="flex:1"><label style="font-size:.65rem">F (g)</label><input type="number" value="${it.fat}" oninput="aiPendingItems[${i}].fat=parseInt(this.value)||0"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function aiRemoveItem(i) {
+  aiPendingItems.splice(i, 1);
+  renderAIConfirmItems();
+}
+
+function aiConfirmAdd() {
+  if (aiPendingItems.length === 0) { closeAIConfirm(); return; }
+  const foods = getData(KEYS.foods);
+  const date = foodLogDate();
+  let n = 0;
+  aiPendingItems.forEach((it, i) => {
+    foods.push({
+      id: Date.now() + i,
+      date,
+      type: it.type,
+      desc: it.desc,
+      cal: it.cal,
+      protein: it.protein,
+      carbs: it.carbs,
+      fat: it.fat
+    });
+    n++;
+  });
+  setData(KEYS.foods, foods);
+  renderFoodForDate();
+  toast(`Added ${n} item${n>1?'s':''} to log`, 'success');
+  closeAIConfirm();
+}
+
+function closeAIConfirm() {
+  document.getElementById('ai-confirm-modal').classList.remove('show');
+  aiPendingItems = [];
+  aiPhotoThumb = null;
 }
 
 function renderFoodTable() {
