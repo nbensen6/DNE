@@ -1,4 +1,4 @@
-app = "nbensen-dne"
+app = "dne"
 primary_region = "ord"
 
 [build]
