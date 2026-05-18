@@ -1329,6 +1329,36 @@ function renderWorkoutPlan() {
   renderWorkoutHistory();
 }
 
+function workoutDraftKey(dayKey) {
+  return 'fitness_workout_draft_' + todayStr() + '_' + dayKey;
+}
+
+function getWorkoutDraft(dayKey) {
+  try {
+    const raw = localStorage.getItem(workoutDraftKey(dayKey));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function setWorkoutDraft(dayKey, exercises) {
+  try { localStorage.setItem(workoutDraftKey(dayKey), JSON.stringify(exercises)); } catch {}
+}
+
+function clearWorkoutDraft(dayKey) {
+  try { localStorage.removeItem(workoutDraftKey(dayKey)); } catch {}
+}
+
+function captureWorkoutDraft() {
+  const dayKey = document.getElementById('workout-day-select').value;
+  const plan = WORKOUT_PLAN[dayKey];
+  const exercises = plan.exercises.map((_, i) => ({
+    done: document.getElementById('ex-check-' + i)?.checked || false,
+    logWeight: document.getElementById('ex-wt-' + i)?.value || '',
+    logReps: document.getElementById('ex-reps-' + i)?.value || ''
+  }));
+  setWorkoutDraft(dayKey, exercises);
+}
+
 function renderWorkoutDay() {
   const dayKey = document.getElementById('workout-day-select').value;
   const plan = WORKOUT_PLAN[dayKey];
@@ -1336,22 +1366,25 @@ function renderWorkoutDay() {
 
   const todayWorkouts = getData(KEYS.workouts).filter(w => w.date === todayStr() && w.day === dayKey);
   const saved = todayWorkouts.length > 0 ? todayWorkouts[todayWorkouts.length - 1] : null;
+  const draft = getWorkoutDraft(dayKey);
 
   const list = document.getElementById('workout-exercise-list');
   list.innerHTML = plan.exercises.map((ex, i) => {
+    const draftEx = draft ? draft[i] : null;
     const savedEx = saved ? saved.exercises[i] : null;
-    const checked = savedEx ? savedEx.done : false;
-    const logWeight = savedEx ? (savedEx.logWeight || '') : '';
-    const logReps = savedEx ? (savedEx.logReps || '') : '';
+    const source = draftEx || savedEx;
+    const checked = source ? source.done : false;
+    const logWeight = source ? (source.logWeight || '') : '';
+    const logReps = source ? (source.logReps || '') : '';
     return `<div class="exercise-row">
-      <input type="checkbox" class="exercise-check" id="ex-check-${i}" ${checked ? 'checked' : ''}>
+      <input type="checkbox" class="exercise-check" id="ex-check-${i}" ${checked ? 'checked' : ''} onchange="captureWorkoutDraft()">
       <div style="flex:1">
         <div class="exercise-name">${ex.name} ${ex.video ? `<a href="${ex.video}" target="_blank" style="font-size:.75rem;color:var(--accent);margin-left:6px" title="Watch form video"><i class="fas fa-play-circle"></i></a>` : ''}</div>
         <div class="exercise-detail">${ex.sets} x ${ex.reps} | Rest: ${ex.rest} | ${ex.notes}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center" class="no-print">
-        <input type="number" placeholder="lbs" style="width:70px;padding:6px" id="ex-wt-${i}" value="${logWeight}">
-        <input type="text" placeholder="reps" style="width:70px;padding:6px" id="ex-reps-${i}" value="${logReps}">
+        <input type="number" placeholder="lbs" style="width:70px;padding:6px" id="ex-wt-${i}" value="${logWeight}" oninput="captureWorkoutDraft()">
+        <input type="text" placeholder="reps" style="width:70px;padding:6px" id="ex-reps-${i}" value="${logReps}" oninput="captureWorkoutDraft()">
       </div>
     </div>`;
   }).join('');
@@ -1378,6 +1411,7 @@ function saveWorkout() {
     exercises
   });
   setData(KEYS.workouts, workouts);
+  clearWorkoutDraft(dayKey);
   toast('Workout saved!');
   renderWorkoutHistory();
 }
@@ -1390,6 +1424,7 @@ function clearWorkoutForm() {
     document.getElementById('ex-wt-' + i).value = '';
     document.getElementById('ex-reps-' + i).value = '';
   });
+  clearWorkoutDraft(dayKey);
 }
 
 function renderWorkoutHistory() {
